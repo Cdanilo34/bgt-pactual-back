@@ -93,21 +93,21 @@ La aplicación utiliza las siguientes colecciones de MongoDB:
 ## Configuracion de Email
 #### La aplicación usa sistema de mensajeria Email, es necesario configurar en el application.properties
 
-#### spring.mail.username=tucorreo@gmail.com
-#### spring.mail.password=tu contraseña
+ spring.mail.username=tucorreo@gmail.com
+ spring.mail.password=tu contraseña
 
-#### mail.enable=true -> para activar o desactivar el servicio de email
+ mail.enable=true -> para activar o desactivar el servicio de email
 
 ## Parte 2 de la prueba 
 
-### En directorio bgt-pactual-back\sql esta el archivo
-### consulta.sql con la solucion
+ En directorio bgt-pactual-back\sql esta el archivo
+ consulta.sql con la solucion
 
 ## CloudFormation
 
-### En el directorio bgt-pactual\cloudFormation esta el archivo
-### BTG-Pactual-back-front-mongo-resources-template.yml
-### con todas las instrucciones de creacion de recursos en aws
+ En el directorio bgt-pactual\cloudFormation esta el archivo
+ BTG-Pactual-back-front-mongo-resources-template.yml
+ con todas las instrucciones de creacion de recursos en aws
 
 ## Nota: 
-### Se debe generar el KeyPair desde la consola de aws de quien ejecute la prueba
+Se debe generar el KeyPair desde la consola de aws de quien ejecute la prueba
