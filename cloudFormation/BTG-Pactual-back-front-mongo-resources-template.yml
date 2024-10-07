@@ -1,0 +1,217 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Despliegue de Backend en Java Spring Boot, Frontend Angular y MongoDB en EC2
+
+Parameters:
+  KeyPairName:
+    Description: "El par de claves para acceder a la instancia EC2"
+    Type: String
+
+Resources:
+  # Crear una VPC
+  MyVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: "10.0.0.0/16"
+      EnableDnsSupport: true
+      EnableDnsHostname: true
+      Tags:
+        - Key: Name
+          Value: MyVPC
+
+  # Crear una subred pública
+  MySubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: "10.0.1.0/24"
+      AvailabilityZone: !Select [ 0, !GetAZs "" ]
+      MapPublicIpOnLaunch: true
+
+  # Crear una puerta de enlace de Internet
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: MyInternetGateway
+
+  # Asociar la puerta de enlace de Internet a la VPC
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref MyVPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # Tabla de rutas para la subred pública
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MyVPC
+      Tags:
+        - Key: Name
+          Value: PublicRouteTable
+
+  # Ruta a la puerta de enlace de Internet
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref InternetGateway
+
+  # Asociar la subred a la tabla de rutas pública
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref MySubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  # Bucket S3 para el Frontend Angular (opcional, ya que ahora se descarga desde un repo)
+  AngularAppBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-frontend-bucket"
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: error.html
+
+  # MongoDB en EC2
+  MongoDBInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.micro
+      KeyName: !Ref KeyPairName
+      ImageId: ami-0c55b159cbfafe1fe  # Amazon Linux 2 AMI (ajustar según región)
+      SecurityGroupIds: [!Ref MongoDBSecurityGroup]
+      SubnetId: !Ref MySubnet  # Colocar en la subred pública
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum update -y
+          amazon-linux-extras install docker -y
+          service docker start
+          docker pull mongo
+          docker run -d -p 27017:27017 --name mongodb mongo
+
+          # Esperar 10 segundos para que MongoDB inicie
+          sleep 10
+
+          # Crear documentos en MongoDB
+          docker exec mongodb mongo --eval 'db.createCollection("clientes"); db.clientes.insert({_id: "1", nombre: "Leonel Messi", fondosSuscritos: [], saldo: 500000, email: "cliente@btg.com", telefono: "3001234567"})'
+          docker exec mongodb mongo --eval 'db.createCollection("fondos"); db.fondos.insertMany([
+            { "_id": 1, "nombre": "FPV_BTG_PACTUAL_RECAUDADORA", "montoMinimo": 75000, "categoria": "FPV" },
+            { "_id": 2, "nombre": "FPV_BTG_PACTUAL_ECOPETROL", "montoMinimo": 125000, "categoria": "FPV" },
+            { "_id": 3, "nombre": "DEUDAPRIVADA", "montoMinimo": 50000, "categoria": "FIC" }
+          ])'
+          docker exec mongodb mongo --eval 'db.createCollection("transacciones"); db.transacciones.insert({_id: "transaccion_1", cliente_id: "1", fondo_id: "FPV_BTG_PACTUAL_RECAUDADORA", tipo_transaccion: "suscripcion", monto: 75000, fecha: "2024-09-01", estado: "completada"})'
+
+  # Security Group para MongoDB
+  MongoDBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Permitir acceso a MongoDB desde EC2"
+      VpcId: !Ref MyVPC  # Usar la VPC creada
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 27017
+          ToPort: 27017
+          CidrIp: "0.0.0.0/0"  # Abierto, se puede ajustar para restringir
+
+  # Backend en Java Spring Boot en EC2
+  BackendInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.micro
+      KeyName: !Ref KeyPairName
+      ImageId: ami-0c55b159cbfafe1fe  # Amazon Linux 2 AMI
+      SecurityGroupIds: [!Ref BackendSecurityGroup]
+      SubnetId: !Ref MySubnet  # Colocar en la subred pública
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum update -y
+          amazon-linux-extras install java-openjdk11 -y
+          yum install git -y  # Instalar Git
+          yum install maven -y  # Instalar Maven
+          mkdir /app
+          cd /app
+          git clone https://github.com/Cdanilo34/bgt-pactual-back  # Clonar el repositorio del backend
+          cd bgt-pactual-back
+          mvn clean install  # Construir el proyecto con Maven
+          java -jar target/pactual-0.0.1-SNAPSHOT.jar --spring.data.mongodb.uri=mongodb://<MongoDB_IP>:27017/btg_pactual  # Reemplaza con la IP de MongoDB
+
+  # Frontend Angular en EC2
+  FrontendInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.micro
+      KeyName: !Ref KeyPairName
+      ImageId: ami-0c55b159cbfafe1fe  # Amazon Linux 2 AMI
+      SecurityGroupIds: [!Ref FrontendSecurityGroup]
+      SubnetId: !Ref MySubnet  # Colocar en la subred pública
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum update -y
+          yum install git -y  # Instalar Git
+          curl -sL https://rpm.nodesource.com/setup_14.x | bash -
+          yum install nodejs -y  # Instalar Node.js y npm
+          mkdir /app
+          cd /app
+          git clone https://github.com/Cdanilo34/btg-pactual-front  # Clonar el proyecto Angular
+          cd btg-pactual-front
+          npm install --force  # Instalar dependencias con --force
+          npm start  # Iniciar la aplicación Angular en el puerto 4200
+
+  # Security Group para el Frontend
+  FrontendSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Permitir tráfico HTTP en la instancia del frontend (puerto 4200)"
+      VpcId: !Ref MyVPC  # Usar la VPC creada
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 4200
+          ToPort: 4200
+          CidrIp: "0.0.0.0/0"  # Abierto para acceder desde cualquier lugar
+
+  # Security Group para el Backend
+  BackendSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Permitir tráfico HTTP en la instancia del backend"
+      VpcId: !Ref MyVPC  # Usar la VPC creada
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: "0.0.0.0/0"
+
+  # Role para EC2 con permisos para acceder a S3 (para el backend)
+  EC2S3Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: "EC2AccessS3Role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: "S3AccessPolicy"
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource: !Sub "arn:aws:s3:::${AngularAppBucket}/*"
+
+  # Asociar el Role a la instancia EC2 para el backend
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref EC2S3Role

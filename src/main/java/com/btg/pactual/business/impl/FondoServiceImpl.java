@@ -1,6 +1,7 @@
 package com.btg.pactual.business.impl;
 
 import com.btg.pactual.business.FondoService;
+import com.btg.pactual.business.NotificacionService;
 import com.btg.pactual.enums.TipoTransaccion;
 import com.btg.pactual.exception.ClienteNoEncontradoException;
 import com.btg.pactual.exception.FondoNoEncontradoException;
@@ -12,6 +13,7 @@ import com.btg.pactual.repository.ClienteRepository;
 import com.btg.pactual.repository.FondoRepository;
 import com.btg.pactual.repository.TransaccionRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -22,18 +24,20 @@ import java.util.UUID;
 @Service
 public class FondoServiceImpl implements FondoService {
 
+    @Value("${mail.enable}")
+    private boolean enableMail;
     private final FondoRepository fondoRepository;
     private final ClienteRepository clienteRepository;
     private final TransaccionRepository transaccionRepository;
-   // private final NotificacionService notificacionService; // Extraemos el envío de notificaciones
+    private final NotificacionService notificacionService;
 
     @Autowired
     public FondoServiceImpl(FondoRepository fondoRepository, ClienteRepository clienteRepository,
-                            TransaccionRepository transaccionRepository /*NotificacionService notificacionService*/) {
+                            TransaccionRepository transaccionRepository,NotificacionService notificacionService) {
         this.fondoRepository = fondoRepository;
         this.clienteRepository = clienteRepository;
         this.transaccionRepository = transaccionRepository;
-       // this.notificacionService = notificacionService;
+        this.notificacionService = notificacionService;
     }
 
     @Override
@@ -78,8 +82,9 @@ public class FondoServiceImpl implements FondoService {
         clienteRepository.save(cliente);
 
         // Enviar notificación (email o SMS)
-     //   notificacionService.enviarNotificacion(cliente, fondo);
-
+        if(enableMail) {
+            notificacionService.enviarNotificacion(cliente, fondo, TipoTransaccion.SUSCRIPCION.getDescripcion());
+        }
     }
 
     @Override
@@ -111,11 +116,12 @@ public class FondoServiceImpl implements FondoService {
         transaccion.setId(UUID.randomUUID().toString());
         transaccionRepository.save(transaccion);
 
-        // Enviar notificación
-       // notificacionService.enviarNotificacion(cliente, fondoSuscrito.get(), "cancelacion");
     }
 
-
+    @Override
+    public List<Fondo> listarFondos() {
+        return fondoRepository.findAll();
+    }
 
 
 }
